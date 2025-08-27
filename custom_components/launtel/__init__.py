@@ -25,7 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     user_id: str = entry.data["user_id"]
 
     # Polling intervals
-    NORMAL_INTERVAL = timedelta(minutes=10)
+    NORMAL_INTERVAL = timedelta(hours=6)
     CHANGE_POLL_INTERVAL = timedelta(minutes=1)
 
     # Keep last known service to handle transient portal states
