@@ -75,4 +75,14 @@ class LauntelPlanSelect(CoordinatorEntity, SelectEntity):
             if not locid:
                 raise HomeAssistantError("Unable to determine locid for plan change")
         await self._client.async_change_plan(user_id, psid, service_id, avcid, locid)
+        # Immediately reflect change-in-progress locally so the UI disables right away
+        data = dict(self.coordinator.data)
+        data.update({
+            "change_in_progress": True,
+            "options": [],
+            "label_to_psid": {},
+            "locid": None,
+        })
+        # This method is synchronous (despite the name) in HA
+        self.coordinator.async_set_updated_data(data)
         await self.coordinator.async_request_refresh()

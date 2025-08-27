@@ -74,7 +74,7 @@ class LauntelClient:
             serv_avc_id = card.get("id", "")
 
             # Extract service_id from onclick handler (pauseService/unpauseService)
-            pause_button = card.find("button", onclick=re.compile(r"(un)?pauseService\((\d+)"))
+            pause_button = card.find("button", onclick=re.compile(r"(un)?pauseService\((\d+)") )
             serv_id: Optional[int] = None
             if pause_button and pause_button.has_attr("onclick"):
                 m = re.search(r"(un)?pauseService\((\d+)", pause_button["onclick"])
@@ -87,7 +87,7 @@ class LauntelClient:
             if dt_speed:
                 dd = dt_speed.find_next("dd")
                 if dd:
-                    speed_label = dd.get_text(" ", strip=True)
+                    speed_label = " ".join(s.strip() for s in dd.stripped_strings)
 
             # Extract Status -> detect "Change in progress"
             change_in_progress = False
