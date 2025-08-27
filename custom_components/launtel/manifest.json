@@ -1,0 +1,12 @@
+{
+  "domain": "launtel",
+  "name": "Launtel",
+  "version": "0.0.1",
+  "documentation": "https://github.com/yenchenLiu/home-assistant-launtel",
+  "requirements": [
+    "beautifulsoup4>=4.12.2"
+  ],
+  "codeowners": ["@yenchenLiu"],
+  "iot_class": "cloud_polling",
+  "config_flow": true
+}

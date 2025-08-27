@@ -1,0 +1,27 @@
+{
+  "title": "Launtel",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sign in to Launtel",
+        "description": "Enter your Launtel portal credentials.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "select_service": {
+        "title": "Select service",
+        "description": "Choose which service to control",
+        "data": {
+          "service_id": "Service ID"
+        }
+      }
+    },
+    "error": {
+      "auth": "Authentication failed. Check username/password.",
+      "no_services": "No modifiable services found on your account."
+    }
+  }
+}
+

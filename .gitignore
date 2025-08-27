@@ -1,0 +1,19 @@
+launtel.iml
+
+.idea
+.venv
+
+
+# Home Assistant config
+.cloud/
+.storage/
+blueprints/
+deps/
+tts/
+.HA_VERSION
+automations.yaml
+configuration.yaml
+home-assistant*
+scripts.yaml
+secrets.yaml
+scenes.yaml
