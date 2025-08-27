@@ -3,6 +3,7 @@
   "name": "Launtel",
   "version": "0.0.1",
   "documentation": "https://github.com/yenchenLiu/home-assistant-launtel",
+  "issue_tracker": "https://github.com/yenchenLiu/home-assistant-launtel/issues",
   "requirements": [
     "beautifulsoup4>=4.12.2"
   ],

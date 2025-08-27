@@ -17,3 +17,6 @@ home-assistant*
 scripts.yaml
 secrets.yaml
 scenes.yaml
+
+# HACS
+hacs/
