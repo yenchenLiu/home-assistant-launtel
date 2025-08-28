@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Optional
+from aiohttp import ClientSession
 
 import typer
 
@@ -11,10 +12,7 @@ from custom_components.launtel.api import LauntelClient
 app = typer.Typer(help="Launtel CLI - inspect and change your Launtel residential service plans")
 
 
-async def _get_client(username: str, password: str) -> tuple[LauntelClient, object]:
-    # Lazy import to avoid importing aiohttp unless used
-    from aiohttp import ClientSession
-
+async def _get_client(username: str, password: str) -> tuple[LauntelClient, ClientSession]:
     session = ClientSession()
     client = LauntelClient(session, username, password)
     await client.async_login()
