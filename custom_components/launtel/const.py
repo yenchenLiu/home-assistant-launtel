@@ -9,4 +9,4 @@ CONF_PASSWORD = "password"
 CONF_SERVICE_ID = "service_id"
 
 # Platforms provided by this integration (pause/unpause removed)
-PLATFORMS = ["select", "sensor"]
+PLATFORMS = ["button", "select", "sensor"]
