@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 from typing import Any, Optional
@@ -42,9 +43,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         current_label: Optional[str] = None
         locid: Optional[str] = None
         plans_mapping: dict[int, dict[str, object]] = {}
+        balance: Optional[float] = None
 
         try:
-            services = await client.async_get_services()
+            # Fetch services and balance in parallel for efficiency
+            services_task = client.async_get_services()
+            balance_task = client.async_get_balance()
+            
+            services, balance = await asyncio.gather(services_task, balance_task, return_exceptions=True)
+            
+            # Handle services result
+            if isinstance(services, Exception):
+                _LOGGER.debug("Services fetch error: %s", services)
+                services = []
+            
+            # Handle balance result
+            if isinstance(balance, Exception):
+                _LOGGER.debug("Balance fetch error: %s", balance)
+                balance = None
+            
             svc = next((s for s in services if s.service_id == service_id), None)
 
             if not svc:
@@ -116,6 +133,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "plans_mapping": plans_mapping,
             "change_in_progress": change_in_progress,
             "service_speed_label": svc.speed_label if svc else None,
+            "account_balance": balance,
         }
 
         # Remember last known good service card
