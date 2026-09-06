@@ -14,6 +14,30 @@ __all__ = ["LauntelClient", "LauntelService"]
 BASE_URL = URL("https://residential.launtel.net.au")
 
 
+def _echarts_series(html: str, name: str) -> list[Optional[float]]:
+    """Extract an ECharts series' numeric ``data`` array by its ``name:'...'``.
+
+    The /usage page renders the monthly usage graph as an inline ECharts option
+    object rather than exposing a separate JSON endpoint. Each daily bar/line is
+    a quoted string (e.g. '87.51'); the 30-day-average line contains 'null'
+    entries which are returned as ``None``.
+    """
+    i = html.find(f"name:'{name}'")
+    if i == -1:
+        return []
+    start = html.find("[", html.find("data:", i))
+    end = html.find("]", start)
+    if start == -1 or end == -1:
+        return []
+    out: list[Optional[float]] = []
+    for tok in re.findall(r"'([^']*)'", html[start:end + 1]):
+        try:
+            out.append(float(tok.strip()))
+        except ValueError:
+            out.append(None)
+    return out
+
+
 @dataclass
 class LauntelService:
     title: str
@@ -74,7 +98,7 @@ class LauntelClient:
             serv_avc_id = card.get("id", "")
 
             # Extract service_id from onclick handler (pauseService/unpauseService)
-            pause_button = card.find("button", onclick=re.compile(r"(un)?pauseService\((\d+)") )
+            pause_button = card.find("button", onclick=re.compile(r"(un)?pauseService\((\d+)"))
             serv_id: Optional[int] = None
             if pause_button and pause_button.has_attr("onclick"):
                 m = re.search(r"(un)?pauseService\((\d+)", pause_button["onclick"])
@@ -265,9 +289,9 @@ class LauntelClient:
         resp.raise_for_status()
         html = await resp.text()
         soup = BeautifulSoup(html, "html.parser")
-        
+
         balance = None
-        
+
         # Look for the specific current balance structure
         # Target: <dt>Current Balance</dt><dd><span>+$112.65</span></dd>
         # Note: dt may contain nested HTML elements, so we need to search by text content
@@ -277,7 +301,7 @@ class LauntelClient:
             if re.search(r"Current\s+Balance", dt.get_text(), re.I):
                 balance_dt = dt
                 break
-        
+
         if balance_dt:
             dd_balance = balance_dt.find_next("dd")
             if dd_balance:
@@ -285,7 +309,7 @@ class LauntelClient:
                 balance_span = dd_balance.find("span")
                 if balance_span:
                     balance_text = balance_span.get_text(strip=True)
-                    
+
                     # Extract numeric value from text like '+$112.65' or '-$50.00'
                     balance_match = re.search(r'([\+\-]?)\$?([0-9,]+\.?[0-9]*)', balance_text)
                     if balance_match:
@@ -296,7 +320,7 @@ class LauntelClient:
                             balance = -balance if sign == '-' else balance
                         except (ValueError, AttributeError):
                             balance = None
-        
+
         return balance
 
     async def async_get_estimated_days_remaining(self) -> Optional[int]:
@@ -306,9 +330,9 @@ class LauntelClient:
         resp.raise_for_status()
         html = await resp.text()
         soup = BeautifulSoup(html, "html.parser")
-        
+
         days_remaining = None
-        
+
         # Look for the specific estimated days remaining structure
         # Target: <dt>Estimated Days Remaining ... </dt><dd><span class="text-success">27</span></dd>
         # Note: dt may contain nested HTML elements, so we need to search by text content
@@ -318,7 +342,7 @@ class LauntelClient:
             if re.search(r"Estimated\s+Days\s+Remaining", dt.get_text(), re.I):
                 days_dt = dt
                 break
-        
+
         if days_dt:
             dd_days = days_dt.find_next("dd")
             if dd_days:
@@ -326,7 +350,7 @@ class LauntelClient:
                 days_span = dd_days.find("span")
                 if days_span:
                     days_text = days_span.get_text(strip=True)
-                    
+
                     # Extract numeric value from text like "27"
                     days_match = re.search(r'(\d+)', days_text)
                     if days_match:
@@ -334,5 +358,72 @@ class LauntelClient:
                             days_remaining = int(days_match.group(1))
                         except (ValueError, AttributeError):
                             days_remaining = None
-        
+
         return days_remaining
+
+    async def async_get_usage(self, user_id: str, day: int = 1) -> Optional[dict]:
+        """Scrape today's and month-to-date data usage (GB) from /usage.
+
+        The monthly graph is rendered inline as an ECharts option. Daily values
+        live in per-series ``data`` arrays keyed by name:
+          - 'Data Usage Down'
+          - 'Data Usage Up'
+          - 'Data Usage Night (Free)'  (absent on plans without a free-night tier)
+        The chart title carries the authoritative month-to-date total.
+
+        ``day`` is the local day-of-month (1-31); the value at index day-1 is
+        today's bar. Days later in the month read 0.00 until they arrive.
+
+        Returns a dict of GB figures, or None if the page couldn't be parsed
+        (so the caller can keep the last known values).
+        """
+        await self._ensure_login()
+
+        async def _fetch() -> str:
+            resp = await self._session.get(BASE_URL / "usage", params={"userid": str(user_id)})
+            resp.raise_for_status()
+            return await resp.text()
+
+        html = await _fetch()
+
+        # Session cookie may have lapsed during long-running polling; the portal
+        # then serves the login page. Re-authenticate once and retry.
+        if 'name="username"' in html:
+            self._logged_in = False
+            await self.async_login()
+            html = await _fetch()
+
+        down = _echarts_series(html, "Data Usage Down")
+        up = _echarts_series(html, "Data Usage Up")
+        night = _echarts_series(html, "Data Usage Night (Free)")
+
+        if not down and not up:
+            # Page layout changed or usage not yet available; signal "no data".
+            return None
+
+        idx = day - 1
+
+        def _at(series: list[Optional[float]]) -> float:
+            if 0 <= idx < len(series) and series[idx] is not None:
+                return float(series[idx])
+            return 0.0
+
+        d, u, n = _at(down), _at(up), _at(night)
+
+        # Month-to-date total: prefer the chart title (matches the portal exactly),
+        # fall back to summing the daily series.
+        m = re.search(r"Total Usage\s*([\d.]+)\s*GB", html)
+        if m:
+            month_total = float(m.group(1))
+        else:
+            month_total = round(
+                sum(v for v in (down + up + night) if v is not None), 2
+            )
+
+        return {
+            "today_gb": round(d + u + n, 2),
+            "download_gb": round(d, 2),
+            "upload_gb": round(u, 2),
+            "night_free_gb": round(n, 2),
+            "month_to_date_gb": round(month_total, 2),
+        }

@@ -9,7 +9,8 @@ from aiohttp import ClientSession
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, PLATFORMS
 from .api import LauntelClient, LauntelService
@@ -28,6 +29,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Polling intervals
     NORMAL_INTERVAL = timedelta(hours=6)
     CHANGE_POLL_INTERVAL = timedelta(minutes=1)
+    # Usage data updates stepwise through the day (not live), so a tighter but
+    # still gentle cadence captures changes without hammering the portal.
+    USAGE_INTERVAL = timedelta(minutes=30)
 
     # Keep last known service to handle transient portal states
     previous_service: Optional[LauntelService] = None
@@ -51,26 +55,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             services_task = client.async_get_services()
             balance_task = client.async_get_balance()
             days_task = client.async_get_estimated_days_remaining()
-            
+
             services, balance, estimated_days_remaining = await asyncio.gather(
                 services_task, balance_task, days_task, return_exceptions=True
             )
-            
+
             # Handle services result
             if isinstance(services, Exception):
                 _LOGGER.debug("Services fetch error: %s", services)
                 services = []
-            
+
             # Handle balance result
             if isinstance(balance, Exception):
                 _LOGGER.debug("Balance fetch error: %s", balance)
                 balance = None
-            
+
             # Handle estimated days remaining result
             if isinstance(estimated_days_remaining, Exception):
                 _LOGGER.debug("Estimated days remaining fetch error: %s", estimated_days_remaining)
                 estimated_days_remaining = None
-            
+
             svc = next((s for s in services if s.service_id == service_id), None)
 
             if not svc:
@@ -171,9 +175,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await coordinator.async_config_entry_first_refresh()
 
+    # ------------------------------------------------------------------
+    # Dedicated usage coordinator.
+    # Kept separate from the plan/balance coordinator so daily-usage polling
+    # runs on its own gentle cadence and isn't coupled to the 6h/1min plan
+    # scrape. The /usage page is keyed on user_id, which is already stored in
+    # the config entry, so no extra configuration is required.
+    # ------------------------------------------------------------------
+    async def _async_update_usage() -> dict[str, Any]:
+        try:
+            usage = await client.async_get_usage(user_id, day=dt_util.now().day)
+        except Exception as err:  # noqa: BLE001
+            raise UpdateFailed(f"Launtel usage fetch failed: {err}") from err
+        if usage is None:
+            raise UpdateFailed("Could not parse Launtel usage page")
+        return usage
+
+    usage_coordinator = DataUpdateCoordinator(
+        hass,
+        logger=_LOGGER,
+        name=f"Launtel usage {service_id}",
+        update_method=_async_update_usage,
+        update_interval=USAGE_INTERVAL,
+    )
+
+    # Use async_refresh (not async_config_entry_first_refresh) so a failed first
+    # usage scrape does NOT abort setup of the whole integration. The usage
+    # sensors will simply start unavailable and recover on the next poll.
+    await usage_coordinator.async_refresh()
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "client": client,
         "coordinator": coordinator,
+        "usage_coordinator": usage_coordinator,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
