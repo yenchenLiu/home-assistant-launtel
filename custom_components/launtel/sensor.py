@@ -90,7 +90,7 @@ class LauntelBalanceSensor(CoordinatorEntity, SensorEntity):
     _attr_icon = "mdi:currency-usd"
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = CURRENCY_DOLLAR
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_state_class = SensorStateClass.TOTAL
 
     def __init__(self, coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
